@@ -2,7 +2,13 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { zodValidator, fallback } from "@tanstack/zod-adapter";
 import { z } from "zod";
 import { AssetFilter } from "@/components/AssetFilter";
-import { getAsset, DEFAULT_ASSET, ASSET_SLUGS } from "@/lib/assets";
+import {
+  getAssetOrDefault,
+  formatPrice,
+  formatPercent,
+  DEFAULT_ASSET,
+  ASSET_SLUGS,
+} from "@/lib/assets";
 
 const searchSchema = z.object({
   asset: fallback(z.enum(ASSET_SLUGS), DEFAULT_ASSET).default(DEFAULT_ASSET),
@@ -25,7 +31,7 @@ export const Route = createFileRoute("/dados-iniciais")({
 
 function DataPage() {
   const { asset } = Route.useSearch();
-  const meta = getAsset(asset);
+  const meta = getAssetOrDefault(asset);
 
   return (
     <div className="p-8 lg:p-16 xl:p-24">
@@ -68,8 +74,10 @@ function DataPage() {
             <div className="col-span-2 font-mono text-[10px] uppercase tracking-widest text-ink-muted">
               Reference snapshot
             </div>
-            <Stat label="Open" value={meta.open} />
-            <Stat label="Close" value={meta.close} />
+            <Stat label="Open" value={formatPrice(meta.open, meta)} />
+            <Stat label="Close" value={formatPrice(meta.close, meta)} />
+            <Stat label="Appreciation" value={formatPercent(meta.appreciation)} />
+            <Stat label="Volatility (ann.)" value={formatPercent(meta.volatility)} />
             <Stat label="Market cap" value={meta.marketCap} />
             <Stat label="Country" value={meta.country} />
           </dl>
@@ -90,8 +98,10 @@ function DataPage() {
             <Row k="Sector" v={meta.sector} />
             <Row k="Exchange" v={meta.exchange} />
             <Row k="Region" v={meta.country} />
-            <Row k="Opening price (period)" v={meta.open} mono />
-            <Row k="Closing price (period)" v={meta.close} mono last />
+            <Row k="Opening price (period)" v={formatPrice(meta.open, meta)} mono />
+            <Row k="Closing price (period)" v={formatPrice(meta.close, meta)} mono />
+            <Row k="Total appreciation" v={formatPercent(meta.appreciation)} mono />
+            <Row k="Annual volatility" v={formatPercent(meta.volatility)} mono last />
           </div>
         </section>
 
@@ -102,9 +112,11 @@ function DataPage() {
           <p className="font-serif text-lg text-ink leading-relaxed">
             Os valores acima são metadados do dataset. As séries temporais completas (OHLCV)
             estão em <code className="font-mono text-sm bg-paper px-2 py-0.5 border border-hairline">backend/data/</code>{" "}
-            e os gráficos gerados pelo pipeline são lidos diretamente da pasta{" "}
-            <code className="font-mono text-sm bg-paper px-2 py-0.5 border border-hairline">images/</code>{" "}
-            (irmã de <code className="font-mono text-sm">frontend/</code> no monorepo TCC).
+            e os gráficos gerados pelo pipeline Python são salvos em{" "}
+            <code className="font-mono text-sm bg-paper px-2 py-0.5 border border-hairline">
+              Frontend/public/images/
+            </code>
+            .
           </p>
         </section>
 

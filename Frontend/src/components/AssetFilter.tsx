@@ -15,8 +15,8 @@ export function AssetFilter({ from, current }: AssetFilterProps) {
   const navigate = useNavigate({ from });
   const active = ASSETS.find((a) => a.slug === current) ?? ASSETS[0];
 
-  const equities = ASSETS.filter((a) => a.kind === "equity");
-  const cryptos = ASSETS.filter((a) => a.kind === "crypto");
+  const estrangeiras = ASSETS.filter((a) => a.country !== "Brazil");
+  const brasileiras = ASSETS.filter((a) => a.country === "Brazil");
 
   return (
     <div className="flex flex-col gap-3 border border-hairline bg-surface p-6">
@@ -47,15 +47,15 @@ export function AssetFilter({ from, current }: AssetFilterProps) {
               }
               className="w-full appearance-none bg-paper border border-hairline px-4 py-3 pr-10 font-serif text-lg text-ink focus:outline-none focus:border-ink transition-colors cursor-pointer"
             >
-              <optgroup label="Equities">
-                {equities.map((a) => (
+              <optgroup label="Estrangeiras">
+                {estrangeiras.map((a) => (
                   <option key={a.slug} value={a.slug}>
                     {a.label} — {a.ticker}
                   </option>
                 ))}
               </optgroup>
-              <optgroup label="Crypto">
-                {cryptos.map((a) => (
+              <optgroup label="Brasileiras">
+                {brasileiras.map((a) => (
                   <option key={a.slug} value={a.slug}>
                     {a.label} — {a.ticker}
                   </option>

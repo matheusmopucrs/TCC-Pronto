@@ -62,12 +62,24 @@ tickers_bigtech = [
 
 
 # ==========================================================
-# CRIAR PASTA DE IMAGENS
+# PASTA DE IMAGENS (FRONTEND PUBLIC)
 # ==========================================================
 
-def criar_pasta_imagens():
+_BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+IMAGES_DIR = os.path.normpath(
+    os.path.join(_BACKEND_DIR, "..", "Frontend", "public", "images")
+)
 
-    os.makedirs("images", exist_ok=True)
+
+def criar_pasta_imagens():
+    os.makedirs(IMAGES_DIR, exist_ok=True)
+
+
+def chart_path(ticker, chart_id):
+    """Caminho absoluto: [ticker_minusculo]_[chart_id].png em Frontend/public/images/."""
+    criar_pasta_imagens()
+    filename = f"{ticker.lower()}_{chart_id}.png"
+    return os.path.join(IMAGES_DIR, filename)
 
 
 # ==========================================================
@@ -330,6 +342,49 @@ def salvar_todas_estatisticas_json(todas_estatisticas):
     print(f"\n📊 Todas as estatísticas salvas: {path}")
 
 
+# Campos consumidos pelo frontend (AssetStats em assets-meta.ts)
+FRONTEND_STATS_FIELDS = (
+    "Preço Inicial",
+    "Preço Atual",
+    "Valorização Total (%)",
+    "Volatilidade Anual (%)",
+)
+
+
+def exportar_assets_stats_frontend(todas_estatisticas):
+    """
+    Gera Frontend/src/data/assets-stats.json a partir das estatísticas do pipeline.
+    """
+
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    frontend_path = os.path.join(
+        backend_dir,
+        "..",
+        "Frontend",
+        "src",
+        "data",
+        "assets-stats.json",
+    )
+    frontend_path = os.path.normpath(frontend_path)
+
+    os.makedirs(os.path.dirname(frontend_path), exist_ok=True)
+
+    payload = {}
+
+    for ticker, stats in sorted(todas_estatisticas.items()):
+        payload[ticker] = {
+            field: stats[field]
+            for field in FRONTEND_STATS_FIELDS
+            if field in stats
+        }
+
+    with open(frontend_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+    print(f"📦 assets-stats.json exportado para o frontend: {frontend_path}")
+
+
 # ==========================================================
 # BUSCA DE PREÇO POR DATA
 # ==========================================================
@@ -369,85 +424,47 @@ def buscar_preco_por_data(
 
 
 # ==========================================================
-# GRÁFICO HISTÓRICO
+# GRÁFICO DE FECHAMENTO
 # ==========================================================
 
-def gerar_grafico_historico(
-    df,
-    ticker
-):
-    """
-    Gera gráfico histórico do ativo.
-    """
-
+def gerar_grafico_fechamento(df, ticker):
+    """Preço de fechamento em todo o período analisado."""
     criar_pasta_imagens()
-
     sns.set_style("darkgrid")
-
     plt.figure(figsize=(18, 8))
-
-    plt.plot(
-
-        df.index,
-
-        df["Close"],
-
-        label="Close Price",
-
-        linewidth=2
-    )
-
-    plt.plot(
-
-        df.index,
-
-        df["SMA_20"],
-
-        label="SMA 20",
-
-        alpha=0.8
-    )
-
-    plt.plot(
-
-        df.index,
-
-        df["SMA_50"],
-
-        label="SMA 50",
-
-        alpha=0.8
-    )
-
-    plt.title(
-
-        f"{ticker} Historical Price",
-
-        fontsize=18,
-        fontweight="bold"
-    )
-
+    plt.plot(df.index, df["Close"], label="Close Price", linewidth=2)
+    plt.title(f"{ticker} — Closing Price", fontsize=18, fontweight="bold")
     plt.xlabel("Date")
-
     plt.ylabel("Price")
-
     plt.legend()
-
     plt.tight_layout()
-
-    path = f"images/{ticker}_historical.png"
-
-    plt.savefig(
-
-        path,
-
-        dpi=300,
-        bbox_inches="tight"
-    )
-
+    path = chart_path(ticker, "fechamento")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
     plt.close()
+    print(f"Gráfico de fechamento salvo: {path}")
 
-    print(f"Gráfico histórico salvo: {path}")
+
+# ==========================================================
+# GRÁFICO SMA
+# ==========================================================
+
+def gerar_grafico_sma(df, ticker):
+    """Médias móveis simples SMA 20 e SMA 50."""
+    criar_pasta_imagens()
+    sns.set_style("darkgrid")
+    plt.figure(figsize=(18, 8))
+    plt.plot(df.index, df["Close"], label="Close Price", linewidth=1.5, alpha=0.5)
+    plt.plot(df.index, df["SMA_20"], label="SMA 20", linewidth=2, alpha=0.9)
+    plt.plot(df.index, df["SMA_50"], label="SMA 50", linewidth=2, alpha=0.9)
+    plt.title(f"{ticker} — SMA 20 & SMA 50", fontsize=18, fontweight="bold")
+    plt.xlabel("Date")
+    plt.ylabel("Price")
+    plt.legend()
+    plt.tight_layout()
+    path = chart_path(ticker, "sma")
+    plt.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close()
+    print(f"Gráfico SMA salvo: {path}")
 
 
 # ==========================================================
@@ -506,15 +523,9 @@ def gerar_grafico_valorizacao(
 
     plt.tight_layout()
 
-    path = f"images/{ticker}_valorization.png"
+    path = chart_path(ticker, "valorizacao")
 
-    plt.savefig(
-
-        path,
-
-        dpi=300,
-        bbox_inches="tight"
-    )
+    plt.savefig(path, dpi=300, bbox_inches="tight")
 
     plt.close()
 

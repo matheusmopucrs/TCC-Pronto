@@ -3,10 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 .Python
-.venv/
 venv/
 env/
-tcc-final/
 
 # Python build/test/cache
 build/
@@ -39,11 +37,12 @@ Frontend/.nitro/
 Frontend/.wrangler/
 
 # Project generated files
-images/
+/images/
 Images/
 dados/
 Backend/images/
 Backend/dados/
+Frontend/public/images/*.png
 
 # Environment/local secrets
 .env

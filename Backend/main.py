@@ -27,7 +27,9 @@ from data_processor import (
     gerar_estatisticas_ativo,
     salvar_estatisticas_json,
     salvar_todas_estatisticas_json,
-    gerar_grafico_historico,
+    exportar_assets_stats_frontend,
+    gerar_grafico_fechamento,
+    gerar_grafico_sma,
     gerar_grafico_valorizacao,
     tickers_brasil,
     tickers_bigtech
@@ -141,10 +143,8 @@ def processar_ativo(ticker):
 
         print("\n→ Gerando gráficos históricos...")
 
-        gerar_grafico_historico(
-            features_df,
-            ticker
-        )
+        gerar_grafico_fechamento(features_df, ticker)
+        gerar_grafico_sma(features_df, ticker)
 
         gerar_grafico_valorizacao(
             features_df,
@@ -324,10 +324,13 @@ def processar_ativo(ticker):
         print(f"\n{'='*70}")
         print(f"✅ {ticker} PROCESSADO COM SUCESSO")
         print(f"{'='*70}")
-        print(f"\n📁 Imagens geradas:")
-        print(f"   • {ticker}_historical.png")
-        print(f"   • {ticker}_valorization.png")
-        print(f"   • {ticker}_comparison_report.png\n")
+        key = ticker.lower()
+        print(f"\n📁 Imagens em Frontend/public/images/:")
+        print(f"   • {key}_fechamento.png")
+        print(f"   • {key}_sma.png")
+        print(f"   • {key}_valorizacao.png")
+        print(f"   • {key}_report_total.png")
+        print(f"   • {key}_report_teste.png\n")
 
         # ==================================================
         # LIMPEZA DE MEMÓRIA
@@ -388,6 +391,9 @@ def main():
     # ==================================================
 
     salvar_todas_estatisticas_json(todas_estatisticas)
+
+    if todas_estatisticas:
+        exportar_assets_stats_frontend(todas_estatisticas)
 
     print("\n" + "═" * 80)
     print("PIPELINE FINALIZADO")

@@ -71,13 +71,13 @@ cd Backend
 Crie um ambiente virtual:
 
 ```bash
-python -m venv .venv
+py -3.11 -m venv venv
 ```
 
 Ative o ambiente virtual no Windows:
 
 ```bash
-.venv\Scripts\activate
+.\venv\Scripts\Activate.ps1
 ```
 
 No macOS/Linux:
