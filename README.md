@@ -40,9 +40,11 @@ Frontend  (Vite + React, porta 5173)
 **1. Criar ambiente virtual e instalar dependências Python**
 
 ```powershell
+cd Backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-pip install -r Backend/requirements.txt
+pip install -r requirements.txt
+cd ..
 ```
 
 **2. Instalar dependências do frontend**
@@ -60,10 +62,6 @@ cd ..
 Execute uma única vez antes de rodar o sistema. Leva aproximadamente 2–4 horas para os 20 ativos.
 
 ```powershell
-# Opção 1 — duplo-clique no Windows Explorer
-train.bat
-
-# Opção 2 — PowerShell
 .\train.ps1
 ```
 
@@ -78,10 +76,6 @@ Os artefatos são salvos em `Backend/models/` (gitignored). O arquivo `Frontend/
 Após o treinamento, inicie o backend e o frontend com um único comando:
 
 ```powershell
-# Opção 1 — duplo-clique no Windows Explorer
-start.bat
-
-# Opção 2 — PowerShell
 .\start.ps1
 ```
 
@@ -145,8 +139,8 @@ TCC-Final/
 │   └── package.json
 ├── docs/
 │   └── Estruturacao.md      ← documentação técnica detalhada da arquitetura
-├── start.bat / start.ps1    ← inicia backend + frontend
-├── train.bat / train.ps1    ← executa o pipeline de treinamento
+├── start.ps1                ← inicia backend + frontend
+├── train.ps1                ← executa o pipeline de treinamento
 └── README.md
 ```
 
@@ -154,7 +148,7 @@ TCC-Final/
 
 ## Notas
 
-- `Backend/models/` e `venv/` são gitignored — não são versionados.
+- `Backend/models/` e `Backend/venv/` são gitignored — não são versionados.
 - O treinamento precisa rodar novamente após cada `git pull` que altere `train.py`.
 - Dados de mercado são sempre em tempo real via yfinance; apenas predições usam modelos pré-treinados.
 - A geração de PNGs históricos requer TA-Lib instalado separadamente. Sem ele, o sistema funciona normalmente sem os gráficos estáticos.
