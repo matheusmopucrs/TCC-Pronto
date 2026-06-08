@@ -65,19 +65,19 @@ function IntroductionPage() {
                 <div className="font-mono text-[10px] uppercase tracking-widest text-ink-muted mb-2">
                   Assets covered
                 </div>
-                <div className="font-serif text-5xl text-ink tabular-nums">12</div>
+                <div className="font-serif text-5xl text-ink tabular-nums">20</div>
               </div>
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-widest text-ink-muted mb-2">
                   Models
                 </div>
-                <div className="font-serif text-2xl text-ink">LSTM · XGBoost</div>
+                <div className="font-serif text-2xl text-ink">LSTM · LSTM+XGBoost</div>
               </div>
               <div>
                 <div className="font-mono text-[10px] uppercase tracking-widest text-ink-muted mb-2">
                   Best dir. accuracy
                 </div>
-                <div className="font-serif text-4xl text-ink tabular-nums">68.7%</div>
+                <div className="font-serif text-4xl text-ink tabular-nums">71.2%</div>
               </div>
             </div>
           </div>
@@ -103,18 +103,19 @@ function IntroductionPage() {
           </h2>
           <div className="flex flex-col gap-6">
             <p className="font-serif text-2xl md:text-3xl leading-relaxed text-pretty text-ink">
-              This work compares two families of predictive models — a recurrent{" "}
-              <span className="italic text-ink-muted">Long Short-Term Memory</span> network and
-              a gradient boosted{" "}
-              <span className="italic text-ink-muted">XGBoost</span> regressor — applied to
-              daily closing prices of selected equities and cryptocurrencies.
+              This work evaluates two predictive architectures — a standalone{" "}
+              <span className="italic text-ink-muted">Long Short-Term Memory</span> recurrent
+              network and a hybrid{" "}
+              <span className="italic text-ink-muted">LSTM + XGBoost</span> model — applied to
+              daily closing prices of 20 selected equities across Brazilian and international markets.
             </p>
             <p className="font-serif text-lg text-ink-muted leading-relaxed">
-              The pipeline ingests historical OHLCV data, engineers technical features,
-              trains both models on a rolling window, and benchmarks their forecasts against
-              realized market values. The resulting briefing is organised into three sections:
-              an introduction, an exploration of the underlying data, and a side-by-side review
-              of the predictions.
+              The LSTM captures non-linear temporal dependencies in the price series using
+              60-day sliding windows. The hybrid model then trains an XGBoost regressor on the
+              LSTM's residuals, correcting systematic biases and improving directional accuracy.
+              Both models are evaluated on a held-out 20% test set using five metrics: MAE, RMSE,
+              MAPE, R² and Directional Accuracy. A compensatory analysis examines when each
+              architecture outperforms the other.
             </p>
           </div>
         </div>
@@ -177,19 +178,19 @@ function IntroductionPage() {
             {[
               {
                 k: "Data ingestion",
-                v: "Daily OHLCV pulled via yfinance for equities and crypto, persisted in /data.",
+                v: "Daily OHLCV pulled via yfinance for 10 Brazilian (B3) and 10 international (NASDAQ) equities from 2013 to present.",
               },
               {
                 k: "Feature engineering",
-                v: "Returns, moving averages, RSI, MACD and lagged features built in src/features.py.",
+                v: "SMA, EMA, RSI, MACD, Bollinger Bands and annualised volatility computed as contextual indicators.",
               },
               {
                 k: "Modelling",
-                v: "LSTM (TensorFlow) and XGBoost trained on a rolling window; artifacts saved in /models.",
+                v: "Univariate LSTM (60-day lookback, 80/20 split) trained first; XGBoost then learns the LSTM residuals to form the hybrid model.",
               },
               {
                 k: "Evaluation",
-                v: "RMSE, MAE and directional accuracy computed on a held-out validation set.",
+                v: "Five metrics on the held-out test set: MAE, RMSE, MAPE, R² and Directional Accuracy. Backtesting reports Sharpe ratio and maximum drawdown.",
               },
             ].map((it) => (
               <div key={it.k} className="flex flex-col gap-1 border-t border-hairline pt-4">

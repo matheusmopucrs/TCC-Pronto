@@ -1,122 +1,122 @@
 {
   "AAPL": {
-    "Preço Inicial": 13.14,
-    "Preço Atual": 298.97,
-    "Valorização Total (%)": 2175.58,
-    "Volatilidade Anual (%)": 28.0
+    "Preço Inicial": 16.58,
+    "Preço Atual": 307.34,
+    "Valorização Total (%)": 1753.52,
+    "Volatilidade Anual (%)": 28.19
   },
   "MSFT": {
-    "Preço Inicial": 22.8,
-    "Preço Atual": 417.42,
-    "Valorização Total (%)": 1731.01,
-    "Volatilidade Anual (%)": 26.52
+    "Preço Inicial": 22.14,
+    "Preço Atual": 416.67,
+    "Valorização Total (%)": 1781.62,
+    "Volatilidade Anual (%)": 26.45
   },
   "GOOGL": {
-    "Preço Inicial": 20.39,
-    "Preço Atual": 387.66,
-    "Valorização Total (%)": 1801.18,
-    "Volatilidade Anual (%)": 28.04
+    "Preço Inicial": 17.95,
+    "Preço Atual": 368.53,
+    "Valorização Total (%)": 1952.98,
+    "Volatilidade Anual (%)": 27.95
   },
   "AMZN": {
-    "Preço Inicial": 13.29,
-    "Preço Atual": 259.34,
-    "Valorização Total (%)": 1851.83,
-    "Volatilidade Anual (%)": 32.42
+    "Preço Inicial": 12.87,
+    "Preço Atual": 246.03,
+    "Valorização Total (%)": 1812.32,
+    "Volatilidade Anual (%)": 32.4
   },
   "META": {
-    "Preço Inicial": 26.83,
-    "Preço Atual": 602.61,
-    "Valorização Total (%)": 2146.08,
+    "Preço Inicial": 27.78,
+    "Preço Atual": 593.0,
+    "Valorização Total (%)": 2034.48,
     "Volatilidade Anual (%)": 38.22
   },
   "NVDA": {
-    "Preço Inicial": 0.3,
-    "Preço Atual": 220.61,
-    "Valorização Total (%)": 74451.86,
-    "Volatilidade Anual (%)": 45.75
+    "Preço Inicial": 0.29,
+    "Preço Atual": 205.1,
+    "Valorização Total (%)": 69881.63,
+    "Volatilidade Anual (%)": 45.5
   },
   "TSLA": {
-    "Preço Inicial": 2.46,
-    "Preço Atual": 404.11,
-    "Valorização Total (%)": 16349.52,
-    "Volatilidade Anual (%)": 57.73
+    "Preço Inicial": 2.36,
+    "Preço Atual": 391.0,
+    "Valorização Total (%)": 16486.54,
+    "Volatilidade Anual (%)": 57.45
   },
   "NFLX": {
-    "Preço Inicial": 2.69,
-    "Preço Atual": 89.33,
-    "Valorização Total (%)": 3219.58,
-    "Volatilidade Anual (%)": 43.06
+    "Preço Inicial": 1.31,
+    "Preço Atual": 82.18,
+    "Valorização Total (%)": 6152.14,
+    "Volatilidade Anual (%)": 44.73
   },
   "ADBE": {
-    "Preço Inicial": 41.62,
-    "Preço Atual": 254.99,
-    "Valorização Total (%)": 512.66,
-    "Volatilidade Anual (%)": 32.34
+    "Preço Inicial": 38.34,
+    "Preço Atual": 251.44,
+    "Valorização Total (%)": 555.82,
+    "Volatilidade Anual (%)": 32.26
   },
   "INTC": {
-    "Preço Inicial": 15.65,
-    "Preço Atual": 110.8,
-    "Valorização Total (%)": 608.04,
-    "Volatilidade Anual (%)": 39.62
+    "Preço Inicial": 15.29,
+    "Preço Atual": 99.17,
+    "Valorização Total (%)": 548.62,
+    "Volatilidade Anual (%)": 39.6
   },
   "PETR4.SA": {
-    "Preço Inicial": 4.52,
-    "Preço Atual": 46.09,
-    "Valorização Total (%)": 920.49,
-    "Volatilidade Anual (%)": 45.49
+    "Preço Inicial": 4.58,
+    "Preço Atual": 40.89,
+    "Valorização Total (%)": 792.53,
+    "Volatilidade Anual (%)": 45.3
   },
   "VALE3.SA": {
-    "Preço Inicial": 14.81,
-    "Preço Atual": 81.02,
-    "Valorização Total (%)": 447.24,
-    "Volatilidade Anual (%)": 40.54
+    "Preço Inicial": 18.8,
+    "Preço Atual": 78.7,
+    "Valorização Total (%)": 318.63,
+    "Volatilidade Anual (%)": 40.39
   },
   "ITUB4.SA": {
-    "Preço Inicial": 7.02,
-    "Preço Atual": 38.78,
-    "Valorização Total (%)": 452.18,
-    "Volatilidade Anual (%)": 30.31
+    "Preço Inicial": 6.72,
+    "Preço Atual": 38.83,
+    "Valorização Total (%)": 477.59,
+    "Volatilidade Anual (%)": 30.21
   },
   "BBDC4.SA": {
-    "Preço Inicial": 6.65,
-    "Preço Atual": 17.39,
-    "Valorização Total (%)": 161.53,
-    "Volatilidade Anual (%)": 34.26
+    "Preço Inicial": 6.43,
+    "Preço Atual": 17.47,
+    "Valorização Total (%)": 171.69,
+    "Volatilidade Anual (%)": 34.12
   },
   "BBAS3.SA": {
-    "Preço Inicial": 5.4,
-    "Preço Atual": 20.23,
-    "Valorização Total (%)": 274.97,
-    "Volatilidade Anual (%)": 39.53
+    "Preço Inicial": 5.22,
+    "Preço Atual": 19.17,
+    "Valorização Total (%)": 267.45,
+    "Volatilidade Anual (%)": 39.31
   },
   "ABEV3.SA": {
-    "Preço Inicial": 9.67,
-    "Preço Atual": 15.81,
-    "Valorização Total (%)": 63.46,
-    "Volatilidade Anual (%)": 25.86
+    "Preço Inicial": 9.58,
+    "Preço Atual": 16.17,
+    "Valorização Total (%)": 68.77,
+    "Volatilidade Anual (%)": 25.81
   },
   "MGLU3.SA": {
-    "Preço Inicial": 2.32,
-    "Preço Atual": 6.49,
-    "Valorização Total (%)": 179.94,
-    "Volatilidade Anual (%)": 65.29
+    "Preço Inicial": 3.17,
+    "Preço Atual": 5.44,
+    "Valorização Total (%)": 71.47,
+    "Volatilidade Anual (%)": 64.93
   },
   "WEGE3.SA": {
-    "Preço Inicial": 2.93,
-    "Preço Atual": 41.82,
-    "Valorização Total (%)": 1327.89,
-    "Volatilidade Anual (%)": 31.74
+    "Preço Inicial": 3.15,
+    "Preço Atual": 42.46,
+    "Valorização Total (%)": 1246.07,
+    "Volatilidade Anual (%)": 31.73
   },
   "SUZB3.SA": {
     "Preço Inicial": 16.45,
-    "Preço Atual": 41.05,
-    "Valorização Total (%)": 149.49,
-    "Volatilidade Anual (%)": 29.79
+    "Preço Atual": 41.74,
+    "Valorização Total (%)": 153.69,
+    "Volatilidade Anual (%)": 29.55
   },
   "EQTL3.SA": {
-    "Preço Inicial": 3.14,
-    "Preço Atual": 37.82,
-    "Valorização Total (%)": 1105.22,
-    "Volatilidade Anual (%)": 26.54
+    "Preço Inicial": 2.91,
+    "Preço Atual": 38.91,
+    "Valorização Total (%)": 1235.88,
+    "Volatilidade Anual (%)": 26.52
   }
 }

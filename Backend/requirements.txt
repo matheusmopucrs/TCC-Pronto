@@ -1,10 +1,11 @@
-tensorflow==2.19.0
-keras==3.10.0
+﻿fastapi==0.115.0
+uvicorn[standard]==0.32.0
+yfinance==0.2.66
 pandas==2.2.2
 numpy==2.0.2
+tensorflow==2.19.0
+keras==3.10.0
 xgboost==3.1.2
-yfinance==0.2.66
-matplotlib==3.10.0
-seaborn==0.13.2
 scikit-learn==1.6.0
-TA-Lib==0.6.8
+joblib==1.4.2
+pydantic==2.9.0

@@ -44,6 +44,12 @@ Backend/images/
 Backend/dados/
 Frontend/public/images/*.png
 
+# Modelos treinados (artefatos pesados, não versionar)
+backend/models/*.keras
+backend/models/*.pkl
+backend/models/*.json
+Backend/models/
+
 # Environment/local secrets
 .env
 .env.*

@@ -1,405 +1,233 @@
+﻿"""
+main.py — FastAPI entrypoint
+
+Iniciar o servidor:
+    cd backend
+    uvicorn main:app --reload --port 8000
+
+Endpoints:
+    GET /api/stocks                  Lista os 20 ativos disponíveis
+    GET /api/stocks/{slug}           Dados reais do ativo via yfinance (cache 15 min)
+    GET /api/predictions/{slug}      Predições LSTM + Híbrido + métricas acadêmicas
+    GET /api/backtest/{slug}         Backtesting da estratégia direcional
 """
-main.py
 
-Main orchestration layer for:
-- Data ingestion
-- Feature engineering
-- Sequence generation
-- LSTM training
-- Hybrid XGBoost training
-- Metrics
-- Plot generation
-"""
+import logging
+from contextlib import asynccontextmanager
+from typing import Annotated, Optional
 
-import warnings
-warnings.filterwarnings("ignore")
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
-import numpy as np
-import pandas as pd
-import gc
+from services.data_service import DataService
+from services.ml_service import MLService
+from services.finance_service import FinanceService
 
-from keras import backend as K
+logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
+log = logging.getLogger(__name__)
 
-from data_processor import (
-    carregar_dados,
-    criar_features,
-    normalizar_dados,
-    gerar_estatisticas_ativo,
-    salvar_estatisticas_json,
-    salvar_todas_estatisticas_json,
-    exportar_assets_stats_frontend,
-    gerar_grafico_fechamento,
-    gerar_grafico_sma,
-    gerar_grafico_valorizacao,
-    tickers_brasil,
-    tickers_bigtech
+
+# ── Pydantic schemas ──────────────────────────────────────────────────────────
+
+class StockListItem(BaseModel):
+    slug: str
+    ticker: str
+    label: str
+    exchange: str
+    country: str
+    sector: str
+
+class StockListResponse(BaseModel):
+    stocks: list[StockListItem]
+
+
+class HistoryPoint(BaseModel):
+    date: str
+    close: float
+    sma_20: Optional[float] = None
+    sma_50: Optional[float] = None
+
+class StockDetailResponse(BaseModel):
+    slug: str
+    ticker: str
+    label: str
+    exchange: str
+    country: str
+    sector: str
+    price: float
+    change_pct: float
+    open: float
+    high: float
+    low: float
+    volume: int
+    sma_20: Optional[float] = None
+    sma_50: Optional[float] = None
+    appreciation_12m: float
+    volatility_ann: float
+    history: list[HistoryPoint]
+
+
+class ModelMetrics(BaseModel):
+    mae: float
+    rmse: float
+    mape: float
+    r2: float
+    directional_accuracy: float
+
+class TestPoint(BaseModel):
+    date: str
+    actual: float
+    lstm: float
+    hybrid: float
+
+class ForecastPoint(BaseModel):
+    date: str
+    price: float
+
+class ForecastBlock(BaseModel):
+    from_date: str
+    lstm: list[ForecastPoint]
+    hybrid: list[ForecastPoint]
+
+class PredictionsResponse(BaseModel):
+    slug: str
+    ticker: str
+    test_period: list[TestPoint]
+    forecast: ForecastBlock
+    metrics: dict[str, ModelMetrics]
+
+
+class EquityPoint(BaseModel):
+    date: str
+    value: float
+
+class BacktestResult(BaseModel):
+    cumulative_return: float
+    sharpe_ratio: float
+    max_drawdown: float
+    profit_factor: float
+    equity_curve: list[EquityPoint]
+
+class BacktestResponse(BaseModel):
+    slug: str
+    ticker: str
+    lstm: BacktestResult
+    hybrid: BacktestResult
+
+
+# ── app lifespan ──────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.data_svc = DataService()
+    app.state.ml_svc = MLService()
+    app.state.fin_svc = FinanceService()
+    log.info("Services ready. Available models: %s", app.state.ml_svc.available_models())
+    yield
+
+
+app = FastAPI(
+    title="TCC — Stock Forecasting API",
+    description="Previsão de preços com LSTM e LSTM+XGBoost híbrido",
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
-from models_pipeline import (
-    construir_modelo_lstm,
-    create_sequences,
-    treinar_lstm,
-    treinar_hibrido_xgboost,
-    gerar_grafico_comparativo,
-    calcular_metricas
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:3000",
+        "http://localhost:4173",
+        "http://localhost:8080",
+        "http://localhost:8081",
+        "http://localhost:8082",
+        "http://localhost:8083",
+        "http://localhost:8084",
+        "http://localhost:8085",
+    ],
+    allow_methods=["GET"],
+    allow_headers=["*"],
 )
 
 
-# ==========================================================
-# CONFIGURAÇÕES
-# ==========================================================
+# ── exception handlers ────────────────────────────────────────────────────────
 
-SEQUENCE_LENGTH = 60
+@app.exception_handler(HTTPException)
+async def http_exc_handler(request: Request, exc: HTTPException):
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
-ALL_TICKERS = tickers_brasil + tickers_bigtech
+@app.exception_handler(Exception)
+async def generic_exc_handler(request: Request, exc: Exception):
+    log.error("Unhandled: %s", exc, exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "Erro interno no servidor."})
 
 
-# ==========================================================
-# PIPELINE PRINCIPAL
-# ==========================================================
+# ── dependency helpers ────────────────────────────────────────────────────────
 
-def processar_ativo(ticker):
+def _data(req: Request) -> DataService:
+    return req.app.state.data_svc
 
-    try:
+def _ml(req: Request) -> MLService:
+    return req.app.state.ml_svc
 
-        print("\n" + "=" * 70)
-        print(f"PROCESSANDO: {ticker}")
-        print("=" * 70)
+def _fin(req: Request) -> FinanceService:
+    return req.app.state.fin_svc
 
-        # ==================================================
-        # DOWNLOAD DOS DADOS
-        # ==================================================
+DS = Annotated[DataService, Depends(_data)]
+ML = Annotated[MLService, Depends(_ml)]
+FS = Annotated[FinanceService, Depends(_fin)]
 
-        raw_data = carregar_dados([ticker])
 
-        if raw_data.empty:
-            raise ValueError("Dados vazios.")
+# ── routes ────────────────────────────────────────────────────────────────────
 
-        # ==================================================
-        # EXTRAÇÃO DO TICKER
-        # ==================================================
+@app.get("/api/stocks", response_model=StockListResponse)
+async def list_stocks(ds: DS):
+    return ds.get_stock_list()
 
-        if isinstance(raw_data.columns, pd.MultiIndex):
 
-            asset_df = pd.DataFrame({
-
-                "Open": raw_data["Open"][ticker],
-                "High": raw_data["High"][ticker],
-                "Low": raw_data["Low"][ticker],
-                "Close": raw_data["Close"][ticker],
-                "Volume": raw_data["Volume"][ticker]
-
-            })
-
-        else:
-
-            asset_df = raw_data.copy()
-
-        asset_df.dropna(inplace=True)
-
-        # ==================================================
-        # FEATURE ENGINEERING
-        # ==================================================
-
-        features_df = criar_features(asset_df)
-
-        if len(features_df) < SEQUENCE_LENGTH + 200:
-            raise ValueError(
-                f"Poucos dados após feature engineering ({len(features_df)} linhas)"
-            )
-
-        # ==================================================
-        # PHASE 1: MARKET ANALYTICS / HISTORICAL IMAGES
-        # ==================================================
-
-        print("\n" + "─" * 70)
-        print("PHASE 1: MARKET ANALYTICS / HISTORICAL IMAGES")
-        print("─" * 70)
-
-        # ──────────────────────────────────────────────────
-        # STATISTICS
-        # ──────────────────────────────────────────────────
-
-        print("\n→ Gerando estatísticas históricas...")
-
-        estatisticas = gerar_estatisticas_ativo(
-            features_df,
-            ticker
+@app.get("/api/stocks/{slug}", response_model=StockDetailResponse)
+async def get_stock(slug: str, ds: DS):
+    data = ds.get_stock_detail(slug)
+    if data is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Ativo não encontrado: '{slug}'. Verifique se o slug é válido (ex: aapl, petr4).",
         )
+    return data
 
-        print("\n📊 ESTATÍSTICAS DO ATIVO:")
-        for chave, valor in estatisticas.items():
-            print(f"   {chave}: {valor}")
 
-        # ──────────────────────────────────────────────────
-        # SALVAR ESTATÍSTICAS EM JSON
-        # ──────────────────────────────────────────────────
-
-        salvar_estatisticas_json(estatisticas, ticker)
-
-        # ──────────────────────────────────────────────────
-        # HISTORICAL CHARTS
-        # ──────────────────────────────────────────────────
-
-        print("\n→ Gerando gráficos históricos...")
-
-        gerar_grafico_fechamento(features_df, ticker)
-        gerar_grafico_sma(features_df, ticker)
-
-        gerar_grafico_valorizacao(
-            features_df,
-            ticker
+@app.get("/api/predictions/{slug}", response_model=PredictionsResponse)
+async def get_predictions(slug: str, ml: ML):
+    data = ml.get_predictions(slug)
+    if data is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Modelo não treinado para '{slug}'. "
+                f"Execute: python backend/train.py"
+            ),
         )
+    return data
 
-        print("\n✅ Phase 1 concluído (Análises históricas e gráficos gerados)")
 
-        # ==================================================
-        # PHASE 2: AI PREDICTION PIPELINE
-        # ==================================================
-
-        print("\n" + "─" * 70)
-        print("PHASE 2: AI PREDICTION PIPELINE (LSTM + XGBOOST)")
-        print("─" * 70)
-
-        # ──────────────────────────────────────────────────
-        # NORMALIZAÇÃO
-        # ──────────────────────────────────────────────────
-
-        print("\n→ Normalizando dados...")
-
-        scaler, scaled_data = normalizar_dados(features_df)
-
-        # ──────────────────────────────────────────────────
-        # UTILIZAR SOMENTE CLOSE NA LSTM
-        # ──────────────────────────────────────────────────
-
-        target_col_index = features_df.columns.get_loc("Close")
-
-        close_data = scaled_data[:, target_col_index]
-
-        # ──────────────────────────────────────────────────
-        # SEQUÊNCIAS TEMPORAIS
-        # ──────────────────────────────────────────────────
-
-        print("\n→ Criando sequências temporais...")
-
-        x, y = create_sequences(
-            close_data,
-            look_back=SEQUENCE_LENGTH
+@app.get("/api/backtest/{slug}", response_model=BacktestResponse)
+async def get_backtest(slug: str, ml: ML, fin: FS):
+    preds = ml.get_predictions(slug)
+    if preds is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Modelo não treinado para '{slug}'. Execute: python backend/train.py",
         )
-
-        # ──────────────────────────────────────────────────
-        # RESHAPE PARA LSTM
-        # ──────────────────────────────────────────────────
-
-        x = x.reshape(
-            x.shape[0],
-            x.shape[1],
-            1
-        )
-
-        print(f"\nShape X: {x.shape}")
-        print(f"Shape Y: {y.shape}")
-
-        # ──────────────────────────────────────────────────
-        # TRAIN / TEST SPLIT
-        # ──────────────────────────────────────────────────
-
-        print("\n→ Dividindo dados (80% treino / 20% teste)...")
-
-        split_index = int(len(x) * 0.8)
-
-        x_train = x[:split_index]
-        y_train = y[:split_index]
-
-        x_test = x[split_index:]
-        y_test = y[split_index:]
-
-        print(f"Treino: {len(x_train)} sequências")
-        print(f"Teste : {len(x_test)} sequências")
-
-        # ──────────────────────────────────────────────────
-        # MODELO LSTM
-        # ──────────────────────────────────────────────────
-
-        print("\n→ Construindo e treinando modelo LSTM...")
-
-        model = construir_modelo_lstm(
-            input_shape=(x_train.shape[1], x_train.shape[2])
-        )
-
-        # ──────────────────────────────────────────────────
-        # TREINAMENTO
-        # ──────────────────────────────────────────────────
-
-        treinar_lstm(
-            model,
-            x_train,
-            y_train
-        )
-
-        # ──────────────────────────────────────────────────
-        # PREVISÕES LSTM
-        # ──────────────────────────────────────────────────
-
-        print("\n→ Gerando previsões LSTM...")
-
-        y_pred_lstm = model.predict(
-            x_test,
-            verbose=0
-        ).flatten()
-
-        # ──────────────────────────────────────────────────
-        # MODELO HÍBRIDO
-        # ──────────────────────────────────────────────────
-
-        print("\n→ Treinando modelo híbrido (LSTM + XGBoost)...")
-
-        y_pred_hibrido, xgb_model = treinar_hibrido_xgboost(
-            y_test,
-            y_pred_lstm
-        )
-
-        close_min = scaler.data_min_[target_col_index]
-        close_max = scaler.data_max_[target_col_index]
-        close_range = close_max - close_min
-
-        y_test_price = (y_test * close_range) + close_min
-        y_pred_lstm_price = (y_pred_lstm * close_range) + close_min
-        y_pred_hibrido_price = (y_pred_hibrido * close_range) + close_min
-
-        prediction_dates = features_df.index[
-            SEQUENCE_LENGTH + split_index:
-            SEQUENCE_LENGTH + split_index + len(y_test)
-        ]
-
-        # ==================================================
-        # MÉTRICAS
-        # ==================================================
-
-        print("\n→ Calculando métricas...")
-
-        metricas_lstm = calcular_metricas(
-            y_test_price,
-            y_pred_lstm_price
-        )
-
-        metricas_hibrido = calcular_metricas(
-            y_test_price,
-            y_pred_hibrido_price
-        )
-
-        print("\n📈 RESULTADOS:")
-
-        print(
-            f"LSTM  → "
-            f"RMSE: {metricas_lstm['RMSE']:.6f} | "
-            f"MAE: {metricas_lstm['MAE']:.6f} | "
-            f"R²: {metricas_lstm['R2']:.4f}"
-        )
-
-        print(
-            f"HYBRID → "
-            f"RMSE: {metricas_hibrido['RMSE']:.6f} | "
-            f"MAE: {metricas_hibrido['MAE']:.6f} | "
-            f"R²: {metricas_hibrido['R2']:.4f}"
-        )
-
-        # ==================================================
-        # GRÁFICOS DE PREVISÃO
-        # ==================================================
-
-        print("\n→ Gerando gráficos de previsão...")
-
-        gerar_grafico_comparativo(
-            ticker=ticker,
-            real=y_test_price,
-            lstm_pred=y_pred_lstm_price,
-            hybrid_pred=y_pred_hibrido_price,
-            historico_datas=features_df.index,
-            historico_close=features_df["Close"],
-            previsao_datas=prediction_dates
-        )
-
-        print(f"\n{'='*70}")
-        print(f"✅ {ticker} PROCESSADO COM SUCESSO")
-        print(f"{'='*70}")
-        key = ticker.lower()
-        print(f"\n📁 Imagens em Frontend/public/images/:")
-        print(f"   • {key}_fechamento.png")
-        print(f"   • {key}_sma.png")
-        print(f"   • {key}_valorizacao.png")
-        print(f"   • {key}_report_total.png")
-        print(f"   • {key}_report_teste.png\n")
-
-        # ==================================================
-        # LIMPEZA DE MEMÓRIA
-        # ==================================================
-
-        K.clear_session()
-        gc.collect()
-
-        return estatisticas
-
-    except Exception as e:
-
-        print(f"\nERRO AO PROCESSAR {ticker}")
-        print(f"Detalhes: {str(e)}\n")
-
-        # ==================================================
-        # LIMPEZA DE MEMÓRIA (MESMO EM CASO DE ERRO)
-        # ==================================================
-
-        K.clear_session()
-        gc.collect()
-
-        return None
+    result = fin.run_backtest(slug, preds)
+    if result is None:
+        raise HTTPException(status_code=500, detail="Erro ao calcular backtesting.")
+    return result
 
 
-# ==========================================================
-# EXECUÇÃO PRINCIPAL
-# ==========================================================
-
-def main():
-
-    print("\n" + "═" * 80)
-    print("PIPELINE FINANCEIRO - 2 FASES")
-    print("═" * 80)
-    print("\n📊 PHASE 1: Market Analytics / Historical Images")
-    print("   • Historical charts")
-    print("   • Valuation charts")
-    print("   • Statistics & Technical Indicators")
-    print("   • Historical information")
-    print("\n🤖 PHASE 2: AI Prediction Pipeline")
-    print("   • Create sequences")
-    print("   • Train LSTM")
-    print("   • Train XGBoost")
-    print("   • Generate prediction graphics")
-    print("\n" + "═" * 80 + "\n")
-
-    todas_estatisticas = {}
-
-    for ticker in ALL_TICKERS:
-
-        stats = processar_ativo(ticker)
-
-        if stats is not None:
-            todas_estatisticas[ticker] = stats
-
-    # ==================================================
-    # SALVAR TODAS AS ESTATÍSTICAS
-    # ==================================================
-
-    salvar_todas_estatisticas_json(todas_estatisticas)
-
-    if todas_estatisticas:
-        exportar_assets_stats_frontend(todas_estatisticas)
-
-    print("\n" + "═" * 80)
-    print("PIPELINE FINALIZADO")
-    print("═" * 80)
-
-
-if __name__ == "__main__":
-
-    main()
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
