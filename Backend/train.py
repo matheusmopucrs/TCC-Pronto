@@ -48,7 +48,8 @@ FRONTEND_STATS_PATH = (
 )
 
 SEQUENCE_LENGTH = 60
-TRAIN_RATIO = 0.80
+TRAIN_RATIO = 0.70
+VAL_RATIO = 0.10  # fração reservada para treinar o XGBoost (fora da amostra do LSTM)
 START_DATE = "2013-01-01"
 
 TICKERS_BR = [
@@ -132,22 +133,35 @@ def treinar_lstm(model, x_train, y_train):
 # XGBOOST HÍBRIDO
 # =============================================================================
 
-def treinar_hibrido(y_test: np.ndarray, y_pred_lstm: np.ndarray):
-    residuos = y_test - y_pred_lstm.flatten()
-    features = np.column_stack([
-        y_pred_lstm.flatten(),
-        np.gradient(y_pred_lstm.flatten()),
-        np.abs(np.gradient(y_pred_lstm.flatten())),
+def _xgb_features(pred_lstm: np.ndarray) -> np.ndarray:
+    pred_lstm = pred_lstm.flatten()
+    return np.column_stack([
+        pred_lstm,
+        np.gradient(pred_lstm),
+        np.abs(np.gradient(pred_lstm)),
     ])
+
+
+def treinar_hibrido(y_val: np.ndarray, y_pred_lstm_val: np.ndarray, y_pred_lstm_test: np.ndarray):
+    """
+    Treina o XGBoost nos resíduos do LSTM no conjunto de VALIDAÇÃO (fora da
+    amostra de treino do LSTM) e aplica o ajuste aprendido ao conjunto de
+    TESTE, que nunca foi visto por nenhum dos dois modelos.
+    """
+    residuos_val = y_val - y_pred_lstm_val.flatten()
+    features_val = _xgb_features(y_pred_lstm_val)
+
     xgb = XGBRegressor(
         n_estimators=800, learning_rate=0.03, max_depth=5,
         subsample=0.8, colsample_bytree=0.8,
         objective="reg:squarederror", tree_method="hist",
         random_state=42, n_jobs=-1,
     )
-    xgb.fit(features, residuos)
-    ajuste = xgb.predict(features)
-    return y_pred_lstm.flatten() + ajuste, xgb
+    xgb.fit(features_val, residuos_val)
+
+    features_test = _xgb_features(y_pred_lstm_test)
+    ajuste_test = xgb.predict(features_test)
+    return y_pred_lstm_test.flatten() + ajuste_test, xgb
 
 
 # =============================================================================
@@ -182,26 +196,31 @@ def processar_ativo(ticker: str) -> dict | None:
     scaler = MinMaxScaler(feature_range=(0, 1))
     close_scaled = scaler.fit_transform(df["Close"].values.reshape(-1, 1)).flatten()
 
-    # ── Sequências e split ────────────────────────────────────────────────────
+    # ── Sequências e split temporal (treino / validação XGB / teste) ─────────
     x, y = criar_sequencias(close_scaled, SEQUENCE_LENGTH)
     x = x.reshape(x.shape[0], x.shape[1], 1)
 
-    split = int(len(x) * TRAIN_RATIO)
-    x_train, y_train = x[:split], y[:split]
-    x_test, y_test = x[split:], y[split:]
+    n = len(x)
+    train_end = int(n * TRAIN_RATIO)
+    val_end = int(n * (TRAIN_RATIO + VAL_RATIO))
 
-    print(f"  Treino: {len(x_train)} seq | Teste: {len(x_test)} seq")
+    x_train, y_train = x[:train_end], y[:train_end]
+    x_val, y_val = x[train_end:val_end], y[train_end:val_end]
+    x_test, y_test = x[val_end:], y[val_end:]
+
+    print(f"  Treino: {len(x_train)} seq | Validação (XGB): {len(x_val)} seq | Teste: {len(x_test)} seq")
 
     # ── LSTM ──────────────────────────────────────────────────────────────────
     print("  >>Treinando LSTM...")
     model = construir_lstm((x_train.shape[1], 1))
     treinar_lstm(model, x_train, y_train)
 
+    y_pred_lstm_val_scaled = model.predict(x_val, verbose=0).flatten()
     y_pred_lstm_scaled = model.predict(x_test, verbose=0).flatten()
 
-    # ── Híbrido XGBoost ───────────────────────────────────────────────────────
+    # ── Híbrido XGBoost (treinado nos resíduos da validação, aplicado ao teste) ─
     print("  >>Treinando XGBoost híbrido...")
-    y_pred_hibrido_scaled, xgb_model = treinar_hibrido(y_test, y_pred_lstm_scaled)
+    y_pred_hibrido_scaled, xgb_model = treinar_hibrido(y_val, y_pred_lstm_val_scaled, y_pred_lstm_scaled)
 
     # ── Desnormalização ───────────────────────────────────────────────────────
     y_test_price = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
@@ -209,7 +228,7 @@ def processar_ativo(ticker: str) -> dict | None:
     y_pred_hibrido_price = scaler.inverse_transform(y_pred_hibrido_scaled.reshape(-1, 1)).flatten()
 
     # Datas do período de teste
-    test_start_idx = SEQUENCE_LENGTH + split
+    test_start_idx = SEQUENCE_LENGTH + val_end
     test_dates = df.index[test_start_idx: test_start_idx + len(y_test)]
 
     # ── Métricas ──────────────────────────────────────────────────────────────
