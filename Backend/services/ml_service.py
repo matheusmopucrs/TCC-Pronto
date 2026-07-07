@@ -151,21 +151,58 @@ class MLService:
             close_scaled = scaler.transform(close_vals.reshape(-1, 1)).flatten()
             sequence = close_scaled[-SEQUENCE_LENGTH:].copy()
 
-            # Forecast autorregressivo: cada predição vira input da próxima
-            lstm_preds_scaled = []
+            # Viés inicial do LSTM: "nowcast" causal do último dia real (previsto
+            # com dados até o dia anterior) comparado ao preço real já conhecido.
+            # Esse é o único ponto em que existe uma "resposta certa" disponível;
+            # para os dias futuros (ainda não realizados) não há como recalculá-lo,
+            # então o valor é mantido (carregado) — nunca inventado a partir do futuro.
+            seq_prev = close_scaled[-(SEQUENCE_LENGTH + 1):-1]
+            if len(seq_prev) == SEQUENCE_LENGTH:
+                nowcast_scaled = float(lstm_model.predict(seq_prev.reshape(1, SEQUENCE_LENGTH, 1), verbose=0)[0, 0])
+                last_scaled = close_scaled[-1]
+                resid_atual = (nowcast_scaled - last_scaled) / (last_scaled if last_scaled != 0 else 1e-9)
+            else:
+                resid_atual = 0.0
+
+            # known_close cresce com as próprias previsões (preço desnormalizado) —
+            # proxy causal para retorno/volatilidade "realizados" nos dias futuros,
+            # igual ao truque autorregressivo já usado para a sequência do LSTM.
+            known_close = list(close_vals)
+
+            lstm_preds_scaled: list[float] = []
+            hybrid_preds_scaled: list[float] = []
+            prev_pred_scaled: Optional[float] = None
+
             for _ in range(FORECAST_DAYS):
                 x_in = sequence[-SEQUENCE_LENGTH:].reshape(1, SEQUENCE_LENGTH, 1)
-                pred = float(lstm_model.predict(x_in, verbose=0)[0, 0])
-                lstm_preds_scaled.append(pred)
-                sequence = np.append(sequence[1:], pred)
+                pred_scaled = float(lstm_model.predict(x_in, verbose=0)[0, 0])
+
+                # Features causais (mesmo critério de train.py::_xgb_features)
+                grad = pred_scaled - (prev_pred_scaled if prev_pred_scaled is not None else pred_scaled)
+                ret_1 = (known_close[-1] - known_close[-2]) / known_close[-2]
+                ret_5 = (
+                    (known_close[-1] - known_close[-6]) / known_close[-6]
+                    if len(known_close) >= 6 else 0.0
+                )
+                if len(known_close) >= 11:
+                    recent = np.array(known_close[-11:])
+                    vol_10 = float(np.std(np.diff(recent) / recent[:-1]))
+                else:
+                    vol_10 = 0.0
+
+                xgb_row = np.array([[pred_scaled, grad, abs(grad), ret_1, ret_5, vol_10, resid_atual]])
+                hybrid_scaled = pred_scaled + float(xgb_model.predict(xgb_row)[0])
+
+                lstm_preds_scaled.append(pred_scaled)
+                hybrid_preds_scaled.append(hybrid_scaled)
+
+                prev_pred_scaled = pred_scaled
+                sequence = np.append(sequence[1:], pred_scaled)
+                pred_price = float(scaler.inverse_transform([[pred_scaled]])[0, 0])
+                known_close.append(pred_price)
 
             lstm_arr = np.array(lstm_preds_scaled)
-
-            # Correção XGBoost no espaço normalizado
-            grad = np.gradient(lstm_arr)
-            xgb_features = np.column_stack([lstm_arr, grad, np.abs(grad)])
-            xgb_adj = xgb_model.predict(xgb_features)
-            hybrid_arr = lstm_arr + xgb_adj
+            hybrid_arr = np.array(hybrid_preds_scaled)
 
             # Desnormaliza
             lstm_prices = scaler.inverse_transform(lstm_arr.reshape(-1, 1)).flatten()

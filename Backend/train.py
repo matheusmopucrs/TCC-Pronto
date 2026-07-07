@@ -22,8 +22,7 @@ Nota: TA-Lib NÃO é necessário neste script.
 
 import gc
 import json
-import os
-import sys
+import random
 import warnings
 from datetime import date
 from pathlib import Path
@@ -37,6 +36,17 @@ import yfinance as yf
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import MinMaxScaler
 from xgboost import XGBRegressor
+
+SEED = 42
+
+
+def _set_seeds() -> None:
+    """Fixa as seeds para reprodutibilidade entre execuções de treino."""
+    random.seed(SEED)
+    np.random.seed(SEED)
+    import tensorflow as tf
+    tf.random.set_seed(SEED)
+
 
 # Pasta de saída dos modelos (relativa a este script)
 MODELS_DIR = Path(__file__).parent / "models"
@@ -133,23 +143,51 @@ def treinar_lstm(model, x_train, y_train):
 # XGBOOST HÍBRIDO
 # =============================================================================
 
-def _xgb_features(pred_lstm: np.ndarray) -> np.ndarray:
+def features_causais_precos(close: pd.Series) -> dict[str, np.ndarray]:
+    """
+    Features de mercado 100% causais, derivadas só do preço REAL (não do preço
+    normalizado nem da previsão do LSTM). Cada uma em t usa somente dados até
+    t-1 — nenhuma olha o preço do próprio dia que está sendo previsto.
+
+    Retorna arrays no mesmo índice bruto de `close` (mesmo comprimento).
+    """
+    daily_ret = close.pct_change()
+    ret_1 = daily_ret.shift(1).fillna(0.0).values
+    ret_5 = close.pct_change(5).shift(1).fillna(0.0).values
+    vol_10 = daily_ret.rolling(10).std().shift(1).fillna(0.0).values
+    return {"ret_1": ret_1, "ret_5": ret_5, "vol_10": vol_10}
+
+
+def _xgb_features(pred_lstm: np.ndarray, ret_1: np.ndarray, ret_5: np.ndarray,
+                   vol_10: np.ndarray, resid_lagged: np.ndarray) -> np.ndarray:
+    """
+    Todas as colunas são causais (só usam informação disponível ANTES do dia
+    que está sendo previsto):
+      - pred_lstm     : previsão do LSTM para o dia (feita com dados até t-1)
+      - grad          : diferença causal da própria previsão do LSTM (t vs t-1)
+      - ret_1/ret_5   : retornos REAIS já realizados, terminando em t-1
+      - vol_10        : volatilidade realizada dos últimos 10 dias, até t-1
+      - resid_lagged  : erro relativo do LSTM no dia ANTERIOR (t-1), já conhecido
+    """
     pred_lstm = pred_lstm.flatten()
+    grad = np.diff(pred_lstm, prepend=pred_lstm[0])
     return np.column_stack([
-        pred_lstm,
-        np.gradient(pred_lstm),
-        np.abs(np.gradient(pred_lstm)),
+        pred_lstm, grad, np.abs(grad),
+        ret_1, ret_5, vol_10, resid_lagged,
     ])
 
 
-def treinar_hibrido(y_val: np.ndarray, y_pred_lstm_val: np.ndarray, y_pred_lstm_test: np.ndarray):
+def treinar_hibrido(
+    y_val: np.ndarray, y_pred_lstm_val: np.ndarray, feats_val: dict,
+    y_pred_lstm_test: np.ndarray, feats_test: dict,
+):
     """
     Treina o XGBoost nos resíduos do LSTM no conjunto de VALIDAÇÃO (fora da
     amostra de treino do LSTM) e aplica o ajuste aprendido ao conjunto de
     TESTE, que nunca foi visto por nenhum dos dois modelos.
     """
     residuos_val = y_val - y_pred_lstm_val.flatten()
-    features_val = _xgb_features(y_pred_lstm_val)
+    features_val = _xgb_features(y_pred_lstm_val, **feats_val)
 
     xgb = XGBRegressor(
         n_estimators=800, learning_rate=0.03, max_depth=5,
@@ -159,7 +197,7 @@ def treinar_hibrido(y_val: np.ndarray, y_pred_lstm_val: np.ndarray, y_pred_lstm_
     )
     xgb.fit(features_val, residuos_val)
 
-    features_test = _xgb_features(y_pred_lstm_test)
+    features_test = _xgb_features(y_pred_lstm_test, **feats_test)
     ajuste_test = xgb.predict(features_test)
     return y_pred_lstm_test.flatten() + ajuste_test, xgb
 
@@ -169,6 +207,7 @@ def treinar_hibrido(y_val: np.ndarray, y_pred_lstm_val: np.ndarray, y_pred_lstm_
 # =============================================================================
 
 def processar_ativo(ticker: str) -> dict | None:
+    _set_seeds()
     ticker_safe = ticker.replace(".", "_")
     print(f"\n{'='*65}")
     print(f"  {ticker}")
@@ -192,17 +231,22 @@ def processar_ativo(ticker: str) -> dict | None:
 
     print(f"  OK:{len(df)} dias baixados ({df.index[0].date()} → {df.index[-1].date()})")
 
-    # ── Normalização (somente Close) ──────────────────────────────────────────
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    close_scaled = scaler.fit_transform(df["Close"].values.reshape(-1, 1)).flatten()
-
-    # ── Sequências e split temporal (treino / validação XGB / teste) ─────────
-    x, y = criar_sequencias(close_scaled, SEQUENCE_LENGTH)
-    x = x.reshape(x.shape[0], x.shape[1], 1)
-
-    n = len(x)
+    # ── Split temporal (treino / validação XGB / teste) ──────────────────────
+    # Calculado em nível de sequência ANTES de normalizar, para que o scaler
+    # seja ajustado apenas com preços do período de treino (sem vazamento).
+    close_prices = df["Close"].values
+    n = len(close_prices) - SEQUENCE_LENGTH
     train_end = int(n * TRAIN_RATIO)
     val_end = int(n * (TRAIN_RATIO + VAL_RATIO))
+
+    # ── Normalização (somente Close, scaler ajustado só no período de treino) ─
+    raw_train_cutoff = train_end + SEQUENCE_LENGTH  # última linha coberta pelo treino
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaler.fit(close_prices[:raw_train_cutoff].reshape(-1, 1))
+    close_scaled = scaler.transform(close_prices.reshape(-1, 1)).flatten()
+
+    x, y = criar_sequencias(close_scaled, SEQUENCE_LENGTH)
+    x = x.reshape(x.shape[0], x.shape[1], 1)
 
     x_train, y_train = x[:train_end], y[:train_end]
     x_val, y_val = x[train_end:val_end], y[train_end:val_end]
@@ -218,9 +262,37 @@ def processar_ativo(ticker: str) -> dict | None:
     y_pred_lstm_val_scaled = model.predict(x_val, verbose=0).flatten()
     y_pred_lstm_scaled = model.predict(x_test, verbose=0).flatten()
 
+    # ── Features causais extras para o XGBoost híbrido ───────────────────────
+    # Retornos/volatilidade REAIS defasados em 1 dia (preço bruto, não o normalizado).
+    mercado = features_causais_precos(df["Close"])
+    ret_1_seq = mercado["ret_1"][SEQUENCE_LENGTH: SEQUENCE_LENGTH + n]
+    ret_5_seq = mercado["ret_5"][SEQUENCE_LENGTH: SEQUENCE_LENGTH + n]
+    vol_10_seq = mercado["vol_10"][SEQUENCE_LENGTH: SEQUENCE_LENGTH + n]
+
+    # Viés recente do LSTM: erro relativo (previsto vs. real) do dia ANTERIOR,
+    # calculado sobre TODAS as sequências para poder olhar 1 passo pra trás em
+    # qualquer ponto (inclusive no primeiro dia de validação/teste).
+    y_pred_lstm_all_scaled = model.predict(x, verbose=0).flatten()
+    resid_all = (y_pred_lstm_all_scaled - y) / np.where(y != 0, y, 1e-9)
+    resid_lagged_all = np.concatenate([[0.0], resid_all[:-1]])
+
+    def _fatiar(inicio, fim):
+        return {
+            "ret_1": ret_1_seq[inicio:fim],
+            "ret_5": ret_5_seq[inicio:fim],
+            "vol_10": vol_10_seq[inicio:fim],
+            "resid_lagged": resid_lagged_all[inicio:fim],
+        }
+
+    feats_val = _fatiar(train_end, val_end)
+    feats_test = _fatiar(val_end, n)
+
     # ── Híbrido XGBoost (treinado nos resíduos da validação, aplicado ao teste) ─
     print("  >>Treinando XGBoost híbrido...")
-    y_pred_hibrido_scaled, xgb_model = treinar_hibrido(y_val, y_pred_lstm_val_scaled, y_pred_lstm_scaled)
+    y_pred_hibrido_scaled, xgb_model = treinar_hibrido(
+        y_val, y_pred_lstm_val_scaled, feats_val,
+        y_pred_lstm_scaled, feats_test,
+    )
 
     # ── Desnormalização ───────────────────────────────────────────────────────
     y_test_price = scaler.inverse_transform(y_test.reshape(-1, 1)).flatten()
